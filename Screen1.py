@@ -156,6 +156,7 @@ def draw_emulator_frame(canvas, elapsed, show_labels=True):
 def main():
     settings = load_settings()
     debug_settings = settings["debug"]
+    video_preview_enabled = settings["video_preview"]
     root = tk.Tk()
     root.title("Screen 1 - Camera")
     root.geometry(display_geometry(settings, "screen1"))
@@ -460,61 +461,73 @@ def main():
             video_surface.place_forget()
             picker.place_forget()
             return
+        vlc = None
+        if video_preview_enabled:
+            try:
+                import vlc as vlc_module
+            except ImportError as error:
+                show_picker(f"Could not import VLC: {error}")
+                return
+            vlc = vlc_module
+
+        current_video = selected_media
+        current_visual = None
+        paused = False
+        ended_video = False
+        playback_id += 1
+        vlc_exception = vlc.VLCException if vlc is not None else RuntimeError
         try:
-            import vlc
-        except ImportError as error:
-            show_picker(f"Could not import VLC: {error}")
-            return
-        try:
-            if video_instance is None:
-                video_instance = vlc.Instance(
-                    "--avcodec-hw=none",
-                    "--avcodec-threads=2",
-                    "--no-audio",
-                    "--no-video-title-show",
-                )
+            if video_preview_enabled:
                 if video_instance is None:
-                    raise RuntimeError("VLC could not start")
-                video_player = video_instance.media_player_new()
+                    video_instance = vlc.Instance(
+                        "--avcodec-hw=none",
+                        "--avcodec-threads=2",
+                        "--no-audio",
+                        "--no-video-title-show",
+                    )
+                    if video_instance is None:
+                        raise RuntimeError("VLC could not start")
+                    video_player = video_instance.media_player_new()
 
-            video_surface.place(
-                relx=1.0,
-                x=-24,
-                y=24,
-                width=320,
-                height=180,
-                anchor="ne",
-            )
-            video_surface.lift()
-            video_surface.update_idletasks()
-            root.update_idletasks()
-            if sys.platform.startswith("win"):
-                video_player.set_hwnd(video_surface.winfo_id())
-            elif sys.platform == "darwin":
-                video_player.set_nsobject(video_surface.winfo_id())
-            else:
-                video_player.set_xwindow(video_surface.winfo_id())
-
-            video_player.stop()
-            current_video = selected_media
-            current_visual = None
-            video_media = video_instance.media_new(str(current_video))
-            if media_loops(settings, current_video):
-                video_media.add_option(":input-repeat=65535")
-            video_player.set_media(video_media)
-            video_player.audio_set_mute(True)
-            video_player.audio_set_volume(0)
-            paused = False
-            ended_video = False
-            playback_id += 1
-            if transition is None:
-                if video_player.play() == -1:
-                    raise RuntimeError("VLC could not start this video")
-            else:
-                pending_transition_video_id = playback_id
-                pending_transition_deadline = (
-                    time.monotonic() + transition["duration"] + 2.0
+                video_surface.place(
+                    relx=1.0,
+                    x=-24,
+                    y=24,
+                    width=320,
+                    height=180,
+                    anchor="ne",
                 )
+                video_surface.lift()
+                video_surface.update_idletasks()
+                root.update_idletasks()
+                if sys.platform.startswith("win"):
+                    video_player.set_hwnd(video_surface.winfo_id())
+                elif sys.platform == "darwin":
+                    video_player.set_nsobject(video_surface.winfo_id())
+                else:
+                    video_player.set_xwindow(video_surface.winfo_id())
+
+                video_player.stop()
+                video_media = video_instance.media_new(str(current_video))
+                if media_loops(settings, current_video):
+                    video_media.add_option(":input-repeat=65535")
+                video_player.set_media(video_media)
+                video_player.audio_set_mute(True)
+                video_player.audio_set_volume(0)
+                if transition is None:
+                    if video_player.play() == -1:
+                        raise RuntimeError("VLC could not start this video")
+                else:
+                    pending_transition_video_id = playback_id
+                    pending_transition_deadline = (
+                        time.monotonic() + transition["duration"] + 2.0
+                    )
+                video_surface.lift()
+            else:
+                if video_player is not None:
+                    video_player.stop()
+                video_surface.place_forget()
+
             PlaybackState.write_state(
                 str(current_video),
                 paused,
@@ -523,13 +536,12 @@ def main():
                 stop_at_seconds=stop_at_seconds,
             )
             picker.place_forget()
-            video_surface.lift()
         except (
             OSError,
             RuntimeError,
             AttributeError,
             tk.TclError,
-            vlc.VLCException,
+            vlc_exception,
         ) as error:
             if video_player is not None:
                 video_player.stop()
@@ -541,6 +553,38 @@ def main():
                 playlist_index = -1
                 pending_playlist_sound_id = None
             show_picker(f"Could not start VLC for {selected_media.name}: {error}")
+
+    def play_default_video():
+        nonlocal selected_index
+        candidate_paths = list(media_root.rglob("*"))
+        if media_root != LEGACY_VIDEO_DIR and LEGACY_VIDEO_DIR.is_dir():
+            candidate_paths.extend(LEGACY_VIDEO_DIR.rglob("*"))
+        default_video = next(
+            (
+                media_file
+                for media_file in candidate_paths
+                if media_file.is_file()
+                and media_kind(media_file) == "video"
+                and media_file.name.casefold() == DEFAULT_VIDEO_NAME.casefold()
+            ),
+            None,
+        )
+        if default_video is None:
+            show_picker(
+                f"Add {DEFAULT_VIDEO_NAME} to the media folder for "
+                "automatic playback after media ends."
+            )
+            return
+        if default_video.parent == LEGACY_VIDEO_DIR and media_root != LEGACY_VIDEO_DIR:
+            enter_folder(media_root)
+        else:
+            enter_folder(default_video.parent)
+        selected_index = entries.index(default_video)
+        video_list.selection_clear(0, "end")
+        video_list.selection_set(selected_index)
+        video_list.activate(selected_index)
+        video_list.see(selected_index)
+        play_media(default_video)
 
     def play_playlist_item(index):
         nonlocal active_playlist, playlist_index, finished_playback_seen
@@ -850,7 +894,7 @@ def main():
                     elif vertical < 0 or horizontal > 0:
                         select_relative(1)
 
-        if pending_transition_video_id is not None:
+        if video_preview_enabled and pending_transition_video_id is not None:
             state = read_playback_state()
             if state is None:
                 root.after(200, poll_gamepad)
@@ -883,7 +927,8 @@ def main():
                             )
 
         if (
-            pending_transition_video_id is None
+            video_preview_enabled
+            and pending_transition_video_id is None
             and current_video is not None
             and media_kind(current_video) == "video"
             and not active_playlist
@@ -902,39 +947,25 @@ def main():
                 show_picker(f"VLC could not decode: {current_video.name}")
             elif state == vlc.State.Ended and not ended_video:
                 ended_video = True
-                candidate_paths = list(media_root.rglob("*"))
-                if media_root != LEGACY_VIDEO_DIR and LEGACY_VIDEO_DIR.is_dir():
-                    candidate_paths.extend(LEGACY_VIDEO_DIR.rglob("*"))
-                default_video = next(
-                    (
-                        media_file
-                        for media_file in candidate_paths
-                        if media_file.is_file()
-                        and media_kind(media_file) == "video"
-                        and media_file.name.casefold()
-                        == DEFAULT_VIDEO_NAME.casefold()
-                    ),
-                    None,
-                )
-                if default_video is None:
-                    show_picker(
-                        f"Add {DEFAULT_VIDEO_NAME} to the media folder for "
-                        "automatic playback after media ends."
-                    )
-                else:
-                    if default_video.parent == LEGACY_VIDEO_DIR and media_root != LEGACY_VIDEO_DIR:
-                        current_folder = media_root
-                        refresh_media_list()
-                    else:
-                        enter_folder(default_video.parent)
-                    selected_index = entries.index(default_video)
-                    video_list.selection_clear(0, "end")
-                    video_list.selection_set(selected_index)
-                    video_list.activate(selected_index)
-                    video_list.see(selected_index)
-                    play_media(default_video)
+                play_default_video()
             elif state != vlc.State.Ended:
                 ended_video = False
+        elif (
+            not video_preview_enabled
+            and current_video is not None
+            and media_kind(current_video) == "video"
+            and not active_playlist
+        ):
+            state = read_playback_state()
+            if state is None:
+                root.after(200, poll_gamepad)
+                return
+            if (
+                state.get("finished_playback_id") == playback_id
+                and not ended_video
+            ):
+                ended_video = True
+                play_default_video()
         elif (
             active_playlist
             and pending_transition_video_id is None

@@ -13,6 +13,7 @@
   "startup_playlist": [
     "videos/introduction.list.json"
   ],
+  "video_preview": false,
   "microphone_device":null,
   "talk_threshold": 0.2,
   "voice_changer": {
