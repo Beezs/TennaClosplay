@@ -1,0 +1,13 @@
+[
+  ["StopAt","Video",0.1],
+  "error/error.mp4",
+  ["StopAt","Video",0.3],
+  "error/Static.mp4",
+  "TennaIntro.mp4",
+  ["Effect","Fade",1],
+  "ItsTVTime.mp4",
+  ["StopAt","Video",0.3],
+  "error/Static.mp4",
+  "MIKE, the BOARD, please!.mp3",
+  "Straight.talk"
+]

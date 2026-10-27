@@ -1,0 +1,47 @@
+{
+  "volume": 85,
+  "display_resolution": {
+    "screen1": {
+      "width": 1920,
+      "height": 1080
+    },
+    "screen2": {
+      "width": 1024,
+      "height": 768
+    }
+  },
+  "startup_playlist": [
+    "videos/introduction.list.json"
+  ],
+  "microphone_device":null,
+  "talk_threshold": 0.2,
+  "voice_changer": {
+    "enabled": true,
+    "gain": 2.3,
+    "output_level": 0.35,
+    "bit_depth": 6,
+    "sample_rate_reduction": 6
+  },
+  "debug": {
+    "show_microphone_status": false,
+    "show_talk_detection_status": false,
+    "show_currently_playing": false,
+    "show_playback_status": false,
+    "show_picker_instructions": false,
+    "show_camera_simulation_labels": false,
+    "show_camera_status_label": false
+  },
+  "TennaTalk.wav": {
+    "Loop": true
+  },
+  "error/Static.mp4":{
+    "Loop":true
+  },
+  "error/Technical Difficulties.mp4":{
+    "Loop":true
+  },
+  "MIKE, the BOARD, please!.mp3":{
+    "Loop":true
+  }
+  
+}
