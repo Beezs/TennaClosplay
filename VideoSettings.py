@@ -37,6 +37,7 @@ DEFAULT_SETTINGS = {
         "show_picker_instructions": True,
         "show_camera_simulation_labels": True,
         "show_camera_status_label": True,
+        "show_camera_metrics": False,
     },
 }
 

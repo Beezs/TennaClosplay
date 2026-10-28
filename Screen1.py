@@ -2,6 +2,7 @@
 
 import math
 import sys
+import threading
 import time
 import tkinter as tk
 from pathlib import Path
@@ -22,6 +23,7 @@ from VideoSettings import display_geometry, load_settings, media_loops
 CAMERA_SIZE = (640,360)
 FRAME_DELAY_MS = 50
 CAMERA_MODE = "picamera"  # Use "picamera" on Raspberry Pi with a camera attached.
+CPU_TEMPERATURE_FILE = Path("/sys/class/thermal/thermal_zone0/temp")
 MEDIA_DIR = Path(__file__).resolve().parent / "media"
 LEGACY_VIDEO_DIR = Path(__file__).resolve().parent / "videos"
 DEFAULT_VIDEO_NAME = "default.mp4"
@@ -35,6 +37,17 @@ VOLUME_UP_BUTTON = 6
 UP_BUTTON = 13
 DOWN_BUTTON = 14
 VOICE_VOLUME_STEP = 0.05
+
+
+def read_cpu_temperature():
+    """Return the system thermal-zone temperature in Celsius, if available."""
+    try:
+        temperature = CPU_TEMPERATURE_FILE.read_text(encoding="utf-8").strip()
+        return float(temperature) / 1000
+    except (OSError, ValueError):
+        return None
+
+
 MEDIA_TYPE_COLORS = {
     "talk": "#ff79c6",
     "playlist": "#bd93f9",
@@ -176,9 +189,17 @@ def main():
         media_root = LEGACY_VIDEO_DIR
 
     camera = None
+    camera_thread = None
+    camera_stop_event = threading.Event()
+    camera_frame_lock = threading.Lock()
+    latest_camera_frame = None
+    camera_error = None
+    camera_fps = 0.0
+    camera_temperature = None
     preview_image = None
     preview_item = None
     status_item = None
+    metrics_item = None
     selected_index = 0
     current_folder = media_root
     entries = []
@@ -199,6 +220,9 @@ def main():
     pending_playlist_sound_id = None
 
     def close_screen(_event=None):
+        camera_stop_event.set()
+        if camera_thread is not None:
+            camera_thread.join(timeout=1)
         PlaybackState.write_state()
         if video_player is not None:
             video_player.stop()
@@ -209,6 +233,8 @@ def main():
             pygame.quit()
         if camera is not None:
             camera.stop()
+            if camera_thread is not None and camera_thread.is_alive():
+                camera_thread.join(timeout=1)
             camera.close()
         root.destroy()
 
@@ -775,6 +801,42 @@ def main():
                 )
             )
             camera.start()
+
+            def capture_camera_frames():
+                nonlocal latest_camera_frame, camera_error
+                nonlocal camera_fps, camera_temperature
+                fps_window_started = time.monotonic()
+                frames_in_window = 0
+                last_temperature_read = 0.0
+                while not camera_stop_event.is_set():
+                    try:
+                        frame = camera.capture_array()
+                    except Exception as error:
+                        with camera_frame_lock:
+                            camera_error = error
+                        camera_stop_event.set()
+                        return
+                    now = time.monotonic()
+                    frames_in_window += 1
+                    with camera_frame_lock:
+                        latest_camera_frame = frame
+                        if now - fps_window_started >= 1:
+                            camera_fps = frames_in_window / (
+                                now - fps_window_started
+                            )
+                            frames_in_window = 0
+                            fps_window_started = now
+                        if now - last_temperature_read >= 2:
+                            camera_temperature = read_cpu_temperature()
+                            last_temperature_read = now
+                    camera_stop_event.wait(FRAME_DELAY_MS / 1000)
+
+            camera_thread = threading.Thread(
+                target=capture_camera_frames,
+                name="camera-capture",
+                daemon=True,
+            )
+            camera_thread.start()
         except Exception as error:
             canvas.create_text(
                 24,
@@ -807,7 +869,7 @@ def main():
         return
 
     def update_preview():
-        nonlocal preview_image, preview_item, status_item
+        nonlocal preview_image, preview_item, status_item, metrics_item
 
         if CAMERA_MODE == "emulator":
             draw_emulator_frame(
@@ -819,8 +881,15 @@ def main():
             return
 
         try:
-            frame = camera.capture_array()
-            image = Image.fromarray(frame)
+            with camera_frame_lock:
+                frame = latest_camera_frame
+                error = camera_error
+            if error is not None:
+                raise RuntimeError(f"Camera stopped: {error}") from error
+            if frame is None:
+                root.after(FRAME_DELAY_MS, update_preview)
+                return
+            image = Image.fromarray(frame[:, :, ::-1].copy())
             width = max(canvas.winfo_width(), 1)
             height = max(canvas.winfo_height(), 1)
             image = image.resize((width, height))
@@ -839,11 +908,32 @@ def main():
                         font=("TkDefaultFont", 12, "bold"),
                         text="CAMERA VIEW  |  Esc to exit",
                     )
+                if debug_settings["show_camera_metrics"]:
+                    metrics_item = canvas.create_text(
+                        16,
+                        16,
+                        anchor="nw",
+                        fill="white",
+                        font=("TkDefaultFont", 12, "bold"),
+                    )
             else:
                 canvas.coords(preview_item, 0, 0)
                 canvas.itemconfigure(preview_item, image=preview_image)
                 if status_item is not None:
                     canvas.coords(status_item, 16, height - 16)
+            if metrics_item is not None:
+                with camera_frame_lock:
+                    fps = camera_fps
+                    temperature = camera_temperature
+                temperature_text = (
+                    f"{temperature:.1f} C"
+                    if temperature is not None
+                    else "N/A"
+                )
+                canvas.itemconfigure(
+                    metrics_item,
+                    text=f"FPS: {fps:.1f}  CPU: {temperature_text}",
+                )
         except Exception as error:
             canvas.delete("camera_error")
             canvas.create_text(

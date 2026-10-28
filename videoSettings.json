@@ -30,7 +30,8 @@
     "show_playback_status": false,
     "show_picker_instructions": false,
     "show_camera_simulation_labels": false,
-    "show_camera_status_label": false
+    "show_camera_status_label": false,
+    "show_camera_metrics": false
   },
   "TennaTalk.wav": {
     "Loop": true
