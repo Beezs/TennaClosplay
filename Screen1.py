@@ -19,7 +19,7 @@ from VideoSettings import display_geometry, load_settings, media_loops
 
 
 
-CAMERA_SIZE = (1920,1080)
+CAMERA_SIZE = (640,360)
 FRAME_DELAY_MS = 50
 CAMERA_MODE = "picamera"  # Use "picamera" on Raspberry Pi with a camera attached.
 MEDIA_DIR = Path(__file__).resolve().parent / "media"
@@ -821,15 +821,15 @@ def main():
         try:
             frame = camera.capture_array()
             image = Image.fromarray(frame)
+            width = max(canvas.winfo_width(), 1)
+            height = max(canvas.winfo_height(), 1)
+            image = image.resize((width, height))
             preview_image = ImageTk.PhotoImage(image)
 
-            width = canvas.winfo_width()
-            height = canvas.winfo_height()
-            x = (width - image.width) // 2
-            y = (height - image.height) // 2
-
             if preview_item is None:
-                preview_item = canvas.create_image(x, y, anchor="nw", image=preview_image)
+                preview_item = canvas.create_image(
+                    0, 0, anchor="nw", image=preview_image
+                )
                 if debug_settings["show_camera_status_label"]:
                     status_item = canvas.create_text(
                         16,
@@ -840,7 +840,7 @@ def main():
                         text="CAMERA VIEW  |  Esc to exit",
                     )
             else:
-                canvas.coords(preview_item, x, y)
+                canvas.coords(preview_item, 0, 0)
                 canvas.itemconfigure(preview_item, image=preview_image)
                 if status_item is not None:
                     canvas.coords(status_item, 16, height - 16)
