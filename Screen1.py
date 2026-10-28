@@ -21,7 +21,8 @@ from VideoSettings import display_geometry, load_settings, media_loops
 
 
 CAMERA_SIZE = (640,360)
-FRAME_DELAY_MS = 50
+FRAME_DELAY_MS = 16
+CAMERA_FRAME_RATE = 30
 CAMERA_MODE = "picamera"  # Use "picamera" on Raspberry Pi with a camera attached.
 CPU_TEMPERATURE_FILE = Path("/sys/class/thermal/thermal_zone0/temp")
 MEDIA_DIR = Path(__file__).resolve().parent / "media"
@@ -190,9 +191,15 @@ def main():
 
     camera = None
     camera_thread = None
+    camera_processing_thread = None
     camera_stop_event = threading.Event()
     camera_frame_lock = threading.Lock()
     latest_camera_frame = None
+    latest_camera_frame_id = 0
+    latest_processed_frame = None
+    latest_processed_frame_id = 0
+    latest_rendered_frame_id = 0
+    camera_processing_event = threading.Event()
     camera_error = None
     camera_fps = 0.0
     camera_temperature = None
@@ -221,6 +228,7 @@ def main():
 
     def close_screen(_event=None):
         camera_stop_event.set()
+        camera_processing_event.set()
         if camera_thread is not None:
             camera_thread.join(timeout=1)
         PlaybackState.write_state()
@@ -235,6 +243,11 @@ def main():
             camera.stop()
             if camera_thread is not None and camera_thread.is_alive():
                 camera_thread.join(timeout=1)
+            if (
+                camera_processing_thread is not None
+                and camera_processing_thread.is_alive()
+            ):
+                camera_processing_thread.join(timeout=1)
             camera.close()
         root.destroy()
 
@@ -796,18 +809,22 @@ def main():
 
             camera = Picamera2()
             camera.configure(
-                camera.create_preview_configuration(
-                    main={"size": CAMERA_SIZE, "format": "RGB888"}
+                camera.create_video_configuration(
+                    main={"size": CAMERA_SIZE, "format": "RGB888"},
+                    controls={"FrameRate": CAMERA_FRAME_RATE},
+                    queue=False,
                 )
             )
             camera.start()
 
             def capture_camera_frames():
-                nonlocal latest_camera_frame, camera_error
+                nonlocal latest_camera_frame, latest_camera_frame_id
+                nonlocal camera_error
                 nonlocal camera_fps, camera_temperature
                 fps_window_started = time.monotonic()
                 frames_in_window = 0
                 last_temperature_read = 0.0
+                frame_id = 0
                 while not camera_stop_event.is_set():
                     try:
                         frame = camera.capture_array()
@@ -815,27 +832,72 @@ def main():
                         with camera_frame_lock:
                             camera_error = error
                         camera_stop_event.set()
+                        camera_processing_event.set()
                         return
                     now = time.monotonic()
                     frames_in_window += 1
+                    frame_id += 1
+                    temperature = None
+                    if now - last_temperature_read >= 2:
+                        temperature = read_cpu_temperature()
+                        last_temperature_read = now
                     with camera_frame_lock:
                         latest_camera_frame = frame
+                        latest_camera_frame_id = frame_id
+                        camera_processing_event.set()
                         if now - fps_window_started >= 1:
                             camera_fps = frames_in_window / (
                                 now - fps_window_started
                             )
                             frames_in_window = 0
                             fps_window_started = now
-                        if now - last_temperature_read >= 2:
-                            camera_temperature = read_cpu_temperature()
-                            last_temperature_read = now
-                    camera_stop_event.wait(FRAME_DELAY_MS / 1000)
+                        if temperature is not None:
+                            camera_temperature = temperature
+
+            def process_camera_frames():
+                nonlocal latest_processed_frame, latest_processed_frame_id
+                nonlocal camera_error
+                display_size = (
+                    settings["display_resolution"]["screen1"]["width"],
+                    settings["display_resolution"]["screen1"]["height"],
+                )
+                while not camera_stop_event.is_set():
+                    camera_processing_event.wait()
+                    if camera_stop_event.is_set():
+                        return
+                    with camera_frame_lock:
+                        camera_processing_event.clear()
+                        frame = latest_camera_frame
+                        frame_id = latest_camera_frame_id
+                    if frame is None:
+                        continue
+                    try:
+                        image = Image.fromarray(frame[:, :, ::-1].copy())
+                        image = image.resize(
+                            display_size,
+                            Image.Resampling.BILINEAR,
+                        )
+                    except Exception as error:
+                        with camera_frame_lock:
+                            camera_error = error
+                        camera_stop_event.set()
+                        return
+                    with camera_frame_lock:
+                        if frame_id == latest_camera_frame_id:
+                            latest_processed_frame = image
+                            latest_processed_frame_id = frame_id
 
             camera_thread = threading.Thread(
                 target=capture_camera_frames,
                 name="camera-capture",
                 daemon=True,
             )
+            camera_processing_thread = threading.Thread(
+                target=process_camera_frames,
+                name="camera-frame-processing",
+                daemon=True,
+            )
+            camera_processing_thread.start()
             camera_thread.start()
         except Exception as error:
             canvas.create_text(
@@ -870,6 +932,7 @@ def main():
 
     def update_preview():
         nonlocal preview_image, preview_item, status_item, metrics_item
+        nonlocal latest_rendered_frame_id
 
         if CAMERA_MODE == "emulator":
             draw_emulator_frame(
@@ -882,45 +945,45 @@ def main():
 
         try:
             with camera_frame_lock:
-                frame = latest_camera_frame
+                image = latest_processed_frame
+                frame_id = latest_processed_frame_id
                 error = camera_error
             if error is not None:
                 raise RuntimeError(f"Camera stopped: {error}") from error
-            if frame is None:
+            if image is None:
                 root.after(FRAME_DELAY_MS, update_preview)
                 return
-            image = Image.fromarray(frame[:, :, ::-1].copy())
             width = max(canvas.winfo_width(), 1)
             height = max(canvas.winfo_height(), 1)
-            image = image.resize((width, height))
-            preview_image = ImageTk.PhotoImage(image)
-
-            if preview_item is None:
-                preview_item = canvas.create_image(
-                    0, 0, anchor="nw", image=preview_image
-                )
-                if debug_settings["show_camera_status_label"]:
-                    status_item = canvas.create_text(
-                        16,
-                        height - 16,
-                        anchor="sw",
-                        fill="white",
-                        font=("TkDefaultFont", 12, "bold"),
-                        text="CAMERA VIEW  |  Esc to exit",
+            if frame_id != latest_rendered_frame_id:
+                preview_image = ImageTk.PhotoImage(image)
+                if preview_item is None:
+                    preview_item = canvas.create_image(
+                        0, 0, anchor="nw", image=preview_image
                     )
-                if debug_settings["show_camera_metrics"]:
-                    metrics_item = canvas.create_text(
-                        16,
-                        16,
-                        anchor="nw",
-                        fill="white",
-                        font=("TkDefaultFont", 12, "bold"),
-                    )
-            else:
-                canvas.coords(preview_item, 0, 0)
-                canvas.itemconfigure(preview_item, image=preview_image)
-                if status_item is not None:
-                    canvas.coords(status_item, 16, height - 16)
+                    if debug_settings["show_camera_status_label"]:
+                        status_item = canvas.create_text(
+                            16,
+                            height - 16,
+                            anchor="sw",
+                            fill="white",
+                            font=("TkDefaultFont", 12, "bold"),
+                            text="CAMERA VIEW  |  Esc to exit",
+                        )
+                    if debug_settings["show_camera_metrics"]:
+                        metrics_item = canvas.create_text(
+                            16,
+                            16,
+                            anchor="nw",
+                            fill="white",
+                            font=("TkDefaultFont", 12, "bold"),
+                        )
+                else:
+                    canvas.coords(preview_item, 0, 0)
+                    canvas.itemconfigure(preview_item, image=preview_image)
+                    if status_item is not None:
+                        canvas.coords(status_item, 16, height - 16)
+                latest_rendered_frame_id = frame_id
             if metrics_item is not None:
                 with camera_frame_lock:
                     fps = camera_fps
