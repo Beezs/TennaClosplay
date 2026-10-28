@@ -18,7 +18,8 @@ from MediaTypes import (
 from VideoSettings import display_geometry, load_settings, media_loops
 
 
-CAMERA_SIZE = (640, 360)
+
+CAMERA_SIZE = (1920,1080)
 FRAME_DELAY_MS = 50
 CAMERA_MODE = "emulator"  # Use "picamera" on Raspberry Pi with a camera attached.
 MEDIA_DIR = Path(__file__).resolve().parent / "media"
