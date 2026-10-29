@@ -883,9 +883,8 @@ def main():
                         camera_stop_event.set()
                         return
                     with camera_frame_lock:
-                        if frame_id == latest_camera_frame_id:
-                            latest_processed_frame = image
-                            latest_processed_frame_id = frame_id
+                        latest_processed_frame = image
+                        latest_processed_frame_id = frame_id
 
             camera_thread = threading.Thread(
                 target=capture_camera_frames,
