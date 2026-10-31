@@ -122,30 +122,79 @@ def main():
         raise SystemExit(f"Missing screen file(s): {', '.join(missing)}")
 
     processes = []
-    state_file = Path(tempfile.gettempdir()) / f"tennaclosplay-{uuid.uuid4().hex}.json"
+    log_directory = Path(
+        tempfile.mkdtemp(prefix=f"tennaclosplay-launch-{uuid.uuid4().hex[:8]}-")
+    )
+    log_handles = []
+    process_logs = []
+    exited_processes = []
+    state_file = log_directory / "playback-state.json"
     environment = os.environ.copy()
     environment["TENNA_COSPLAY_STATE_FILE"] = str(state_file)
+    interrupted = False
     try:
         wait_for_displays()
         for screen_path in screen_paths:
+            log_path = log_directory / f"{screen_path.stem}.log"
+            log_handle = log_path.open("w", encoding="utf-8")
+            log_handles.append(log_handle)
             processes.append(
                 subprocess.Popen(
-                    [sys.executable, str(screen_path)],
+                    [sys.executable, "-u", str(screen_path)],
                     cwd=project_dir,
                     env=environment,
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
                 )
             )
+            process_logs.append((screen_path.name, processes[-1], log_path))
 
-        while all(process.poll() is None for process in processes):
+        print(
+            f"Screen processes started. Startup logs: {log_directory}",
+            flush=True,
+        )
+        while True:
+            exited_processes = [
+                (screen_name, process, log_path)
+                for screen_name, process, log_path in process_logs
+                if process.poll() is not None
+            ]
+            if exited_processes:
+                break
             time.sleep(0.1)
     except KeyboardInterrupt:
-        pass
+        interrupted = True
     finally:
         stop_processes(processes)
+        for log_handle in log_handles:
+            log_handle.close()
         try:
             state_file.unlink()
         except FileNotFoundError:
             pass
+
+    if not interrupted:
+        for screen_name, process, log_path in exited_processes:
+            print(
+                f"{screen_name} exited with status {process.returncode}. "
+                f"Log: {log_path}",
+                flush=True,
+            )
+            if process.returncode:
+                try:
+                    log_lines = log_path.read_text(
+                        encoding="utf-8",
+                        errors="replace",
+                    ).splitlines()
+                except OSError as error:
+                    print(f"Could not read startup log: {error}", flush=True)
+                else:
+                    if log_lines:
+                        print(
+                            "\n".join(log_lines[-40:]),
+                            file=sys.stderr,
+                            flush=True,
+                        )
 
 
 if __name__ == "__main__":

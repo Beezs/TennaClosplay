@@ -16,6 +16,7 @@ from MediaTypes import (
     talk_animation_frame_groups,
     talk_animation_images,
 )
+from TkDisplay import create_tk_root
 from VideoSettings import display_geometry, load_settings, media_loops
 
 
@@ -35,7 +36,7 @@ def main():
     debug_settings = settings["debug"]
     talk_threshold = settings["talk_threshold"]
 
-    root = tk.Tk()
+    root = create_tk_root()
     root.title("Screen 2 - Media Playback")
     window_geometry = display_geometry(settings, "screen2")
     root.geometry(window_geometry)

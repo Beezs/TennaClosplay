@@ -16,6 +16,7 @@ from MediaTypes import (
     media_entries,
     media_kind,
 )
+from TkDisplay import create_tk_root
 from VideoSettings import display_geometry, load_settings, media_loops
 
 
@@ -172,7 +173,7 @@ def main():
     settings = load_settings()
     debug_settings = settings["debug"]
     video_preview_enabled = settings["video_preview"]
-    root = tk.Tk()
+    root = create_tk_root()
     root.title("Screen 1 - Camera")
     root.geometry(display_geometry(settings, "screen1"))
     root.overrideredirect(True)

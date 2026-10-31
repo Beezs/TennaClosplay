@@ -1,6 +1,6 @@
 # Cosplay display template
 
-Launch both screens together with `Launch.py`. The launcher waits until two physical displays are connected and initialized before starting either screen. On Linux, it checks active DRM display connectors (with `xrandr` as a fallback):
+Launch both screens together with `Launch.py`. The launcher waits until two physical displays are connected and initialized before starting either screen. On Linux, it checks active DRM display connectors (with `xrandr` as a fallback). If Tkinter starts before the graphical display is ready, each screen retries connecting for up to one minute:
 
 ```bash
 python3 Launch.py
