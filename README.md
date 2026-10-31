@@ -89,7 +89,7 @@ Example for two different display sizes and a playlist that starts automatically
 | Setting | What it does |
 | --- | --- |
 | `volume` | VLC media volume, integer from `0` to `100` (default `85`). |
-| `video_preview` | Show the muted video inset on Screen1 in addition to Screen2 playback (default `true`). Set to `false` on a Raspberry Pi to avoid decoding each video twice. |
+| `video_preview` | Show the muted video inset on Screen1 in addition to Screen2 playback (default `false`). Set to `true` to enable it; leave disabled to avoid decoding each video twice. |
 | `display_resolution.screen1` / `.screen2` | Each screen's `width` and `height` in pixels; positive integers up to `16384`. Screen1 opens at `+0+0`; Screen2 opens at `+screen1-width+0`. Arrange the displays side by side in Windows or Raspberry Pi OS. The older `{"width": ..., "height": ...}` form applies one size to both screens. |
 | `startup_playlist` | Ordered array of paths relative to the project folder. Entries can be video, MP3, WAV, or `.list.json` playlist files; paths inside a playlist are relative to that playlist. Use `[]` to disable startup playback. |
 | `microphone_device` | `null` selects the system default, a string selects an input device whose name contains that text, or an integer selects a device index. Windows prefers a matching WASAPI input endpoint when available; an integer overrides that selection. |

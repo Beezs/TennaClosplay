@@ -19,7 +19,7 @@ DEFAULT_SETTINGS = {
         },
     },
     "startup_playlist": [],
-    "video_preview": True,
+    "video_preview": False,
     "microphone_device": None,
     "talk_threshold": 0.01,
     "voice_changer": {
