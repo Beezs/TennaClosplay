@@ -23,6 +23,7 @@ BACKGROUND = "#101820"
 TALKING_HOLD_SECONDS = 0.45
 TALK_FRAME_DELAY_SECONDS = 0.125
 MICROPHONE_RETRY_SECONDS = 5
+VLC_FILE_CACHING_MS = 1000
 TALK_SOUND_PATH = Path(__file__).resolve().parent / "media" / "TennaTalk.wav"
 TALK_SOUND_LEVEL = 0.12
 
@@ -610,7 +611,8 @@ def main():
                     try:
                         if sound_instance is None:
                             sound_instance = vlc_module.Instance(
-                                "--no-video-title-show"
+                                "--no-video-title-show",
+                                f"--file-caching={VLC_FILE_CACHING_MS}",
                             )
                             if sound_instance is None:
                                 raise RuntimeError(
@@ -848,6 +850,7 @@ def main():
                             "--avcodec-hw=none",
                             "--avcodec-threads=2",
                             "--no-video-title-show",
+                            f"--file-caching={VLC_FILE_CACHING_MS}",
                         )
                         if instance is None:
                             raise RuntimeError("VLC could not start")
