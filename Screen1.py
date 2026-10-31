@@ -872,11 +872,20 @@ def main():
                     if frame is None:
                         continue
                     try:
-                        image = Image.fromarray(frame[:, :, ::-1].copy())
-                        image = image.resize(
-                            display_size,
-                            Image.Resampling.BILINEAR,
-                        )
+                        image = Image.fromarray(frame[:, :, ::-1])
+                        if (
+                            display_size[0] >= frame.shape[1]
+                            and display_size[1] >= frame.shape[0]
+                        ):
+                            image = image.resize(
+                                display_size,
+                                Image.Resampling.NEAREST,
+                            )
+                        else:
+                            image = image.resize(
+                                display_size,
+                                Image.Resampling.BILINEAR,
+                            )
                     except Exception as error:
                         with camera_frame_lock:
                             camera_error = error

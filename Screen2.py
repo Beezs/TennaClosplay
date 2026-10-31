@@ -22,6 +22,7 @@ from VideoSettings import display_geometry, load_settings, media_loops
 BACKGROUND = "#101820"
 TALKING_HOLD_SECONDS = 0.45
 TALK_FRAME_DELAY_SECONDS = 0.125
+MICROPHONE_RETRY_SECONDS = 5
 TALK_SOUND_PATH = Path(__file__).resolve().parent / "media" / "TennaTalk.wav"
 TALK_SOUND_LEVEL = 0.12
 
@@ -119,6 +120,7 @@ def main():
     current_sound_id = None
     pending_sound_start_id = None
     pending_sound_start_deadline = 0.0
+    microphone_retry_at = 0.0
     microphone_stream = None
     microphone_output_stream = None
     microphone_audio_queue = queue.Queue(maxsize=8)
@@ -168,11 +170,13 @@ def main():
     def stop_microphone():
         nonlocal microphone_stream, microphone_output_stream
         if microphone_output_stream is not None:
-            microphone_output_stream.stop()
+            if microphone_output_stream.active:
+                microphone_output_stream.stop()
             microphone_output_stream.close()
             microphone_output_stream = None
         if microphone_stream is not None:
-            microphone_stream.stop()
+            if microphone_stream.active:
+                microphone_stream.stop()
             microphone_stream.close()
             microphone_stream = None
         while not microphone_audio_queue.empty():
@@ -392,7 +396,44 @@ def main():
             output_channels = min(2, output_info["max_output_channels"])
             if output_channels < 1:
                 raise ValueError("The default audio output has no output channels")
-            output_sample_rate = int(output_info["default_samplerate"])
+            input_info = sounddevice.query_devices(input_device, "input")
+            input_sample_rate = int(input_info["default_samplerate"])
+            output_default_sample_rate = int(output_info["default_samplerate"])
+            audio_sample_rate = input_sample_rate
+            if voice_settings["enabled"] or TALK_SOUND_PATH.is_file():
+                audio_sample_rate = None
+                candidate_sample_rates = dict.fromkeys(
+                    (
+                        output_default_sample_rate,
+                        input_sample_rate,
+                        48000,
+                        44100,
+                        32000,
+                        22050,
+                    )
+                )
+                for sample_rate in candidate_sample_rates:
+                    try:
+                        sounddevice.check_input_settings(
+                            device=input_device,
+                            channels=input_channels,
+                            samplerate=sample_rate,
+                        )
+                        sounddevice.check_output_settings(
+                            device=output_device,
+                            channels=output_channels,
+                            samplerate=sample_rate,
+                        )
+                    except sounddevice.PortAudioError:
+                        continue
+                    audio_sample_rate = sample_rate
+                    break
+                if audio_sample_rate is None:
+                    raise ValueError(
+                        "The selected microphone and output device have no common "
+                        "supported sample rate"
+                    )
+            output_sample_rate = audio_sample_rate
             talk_sound_samples = None
             talk_sound_error = None
             talk_sound_loop = sound_loops(TALK_SOUND_PATH)
@@ -448,7 +489,8 @@ def main():
             microphone_stream = sounddevice.InputStream(
                 device=input_device,
                 channels=input_channels,
-                blocksize=1024,
+                samplerate=audio_sample_rate,
+                blocksize=0,
                 callback=filter_microphone if needs_output else detect_microphone,
             )
             if needs_output:
@@ -456,7 +498,7 @@ def main():
                     device=output_device,
                     channels=output_channels,
                     samplerate=output_sample_rate,
-                    blocksize=1024,
+                    blocksize=0,
                     callback=play_filtered_voice,
                 )
             with microphone_lock:
@@ -996,6 +1038,24 @@ def main():
         root.after(50, update_talk_animation)
 
     def update_microphone_status():
+        nonlocal microphone_error, microphone_retry_at
+        streams_active = (
+            microphone_stream is not None
+            and microphone_stream.active
+            and (
+                microphone_output_stream is None
+                or microphone_output_stream.active
+            )
+        )
+        if microphone_error is None and not streams_active:
+            microphone_error = "Audio stream stopped unexpectedly"
+        now = time.monotonic()
+        if microphone_error is not None and now >= microphone_retry_at:
+            stop_microphone()
+            start_microphone()
+            if microphone_error is not None:
+                microphone_retry_at = now + MICROPHONE_RETRY_SECONDS
+
         if debug_settings["show_microphone_status"]:
             with microphone_lock:
                 callback_count = microphone_metrics["callbacks"]
