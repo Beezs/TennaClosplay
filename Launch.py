@@ -17,11 +17,41 @@ DISPLAY_CHECK_INTERVAL_SECONDS = 1
 ACTIVE_DISPLAY_GEOMETRY = re.compile(r"\b\d+x\d+[+-]\d+[+-]\d+\b")
 
 
+def linux_drm_display_count(drm_directory=Path("/sys/class/drm")):
+    status_paths = tuple(drm_directory.glob("card*-*/status"))
+    if not status_paths:
+        return None
+
+    active_displays = 0
+    checked_connectors = 0
+    for status_path in status_paths:
+        try:
+            status = status_path.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            continue
+        try:
+            enabled = status_path.with_name("enabled").read_text(
+                encoding="utf-8"
+            ).strip()
+        except FileNotFoundError:
+            return None
+
+        checked_connectors += 1
+        if status == "connected" and enabled == "enabled":
+            active_displays += 1
+
+    return active_displays if checked_connectors else None
+
+
 def connected_display_count():
     if platform.system() == "Windows":
         return ctypes.windll.user32.GetSystemMetrics(80)
 
     if platform.system() == "Linux":
+        drm_display_count = linux_drm_display_count()
+        if drm_display_count is not None:
+            return drm_display_count
+
         try:
             result = subprocess.run(
                 ["xrandr", "--query"],
