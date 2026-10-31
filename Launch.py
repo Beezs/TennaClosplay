@@ -1,12 +1,73 @@
 """Launch both cosplay screens and keep them running together."""
 
+import ctypes
 import os
+import platform
+import re
 import subprocess
 import sys
 import tempfile
 import time
 import uuid
 from pathlib import Path
+
+
+DISPLAY_COUNT = 2
+DISPLAY_CHECK_INTERVAL_SECONDS = 1
+ACTIVE_DISPLAY_GEOMETRY = re.compile(r"\b\d+x\d+[+-]\d+[+-]\d+\b")
+
+
+def connected_display_count():
+    if platform.system() == "Windows":
+        return ctypes.windll.user32.GetSystemMetrics(80)
+
+    if platform.system() == "Linux":
+        try:
+            result = subprocess.run(
+                ["xrandr", "--query"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except FileNotFoundError as error:
+            raise RuntimeError(
+                "xrandr is required to detect connected displays on Linux."
+            ) from error
+        except subprocess.CalledProcessError as error:
+            detail = error.stderr.strip() or str(error)
+            raise RuntimeError(f"xrandr could not detect displays: {detail}") from error
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("Timed out while detecting connected displays.") from error
+
+        return sum(
+            " connected" in line
+            and ACTIVE_DISPLAY_GEOMETRY.search(line) is not None
+            for line in result.stdout.splitlines()
+        )
+
+    raise RuntimeError(f"Display detection is not supported on {sys.platform}.")
+
+
+def wait_for_displays():
+    last_count = None
+    while True:
+        count = connected_display_count()
+        if count >= DISPLAY_COUNT:
+            print(
+                f"Detected {count} connected and initialized displays. Starting screens.",
+                flush=True,
+            )
+            return
+
+        if count != last_count:
+            print(
+                f"Waiting for {DISPLAY_COUNT} connected and initialized displays; "
+                f"detected {count}.",
+                flush=True,
+            )
+            last_count = count
+        time.sleep(DISPLAY_CHECK_INTERVAL_SECONDS)
 
 
 def stop_processes(processes):
@@ -35,6 +96,7 @@ def main():
     environment = os.environ.copy()
     environment["TENNA_COSPLAY_STATE_FILE"] = str(state_file)
     try:
+        wait_for_displays()
         for screen_path in screen_paths:
             processes.append(
                 subprocess.Popen(

@@ -1,6 +1,6 @@
 # Cosplay display template
 
-Launch both screens together with `Launch.py`:
+Launch both screens together with `Launch.py`. The launcher waits until two physical displays are connected and initialized before starting either screen:
 
 ```bash
 python3 Launch.py
