@@ -23,7 +23,7 @@ from VideoSettings import display_geometry, load_settings, media_loops
 
 CAMERA_SIZE = (320, 180)
 FRAME_DELAY_MS = 16
-CAMERA_FRAME_RATE = 30
+CAMERA_FRAME_RATE = 60
 CAMERA_MODE = "picamera"  # Use "picamera" on Raspberry Pi with a camera attached.
 CPU_TEMPERATURE_FILE = Path("/sys/class/thermal/thermal_zone0/temp")
 MEDIA_DIR = Path(__file__).resolve().parent / "media"
