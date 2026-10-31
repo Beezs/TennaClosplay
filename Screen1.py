@@ -21,7 +21,7 @@ from VideoSettings import display_geometry, load_settings, media_loops
 
 
 
-CAMERA_SIZE = (320,240)
+CAMERA_SIZE = (320, 180)
 FRAME_DELAY_MS = 16
 CAMERA_FRAME_RATE = 30
 CAMERA_MODE = "picamera"  # Use "picamera" on Raspberry Pi with a camera attached.

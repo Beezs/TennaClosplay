@@ -126,7 +126,7 @@ sudo apt update
 sudo apt install python3-tk python3-picamera2 python3-pil python3-numpy vlc python3-vlc python3-pygame python3-sounddevice
 ```
 
-On a Raspberry Pi 4, set `"video_preview": false` in `videoSettings.json` to avoid software-decoding the same video on both screens. Screen2 still plays the video full-screen with audio; Screen1 continues showing the camera.
+On a Raspberry Pi 4, set `"video_preview": false` in `videoSettings.json` to avoid software-decoding the same video on both screens. Screen2 still plays the video full-screen with audio; Screen1 continues showing the camera. Screen1 captures at 16:9 to use a widescreen camera sensor's wider horizontal view while keeping the camera processing size small.
 
 The default `CAMERA_MODE = "emulator"` in `Screen1.py` draws a test scene and does not use the camera. To use a supported camera connected to the Pi, edit `Screen1.py` and change that line to:
 
