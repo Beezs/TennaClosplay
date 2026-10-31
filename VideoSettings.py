@@ -20,6 +20,8 @@ DEFAULT_SETTINGS = {
     },
     "startup_playlist": [],
     "video_preview": False,
+    "preload_videos_to_cache": False,
+    "preload_videos_to_memory": False,
     "microphone_device": None,
     "talk_threshold": 0.01,
     "voice_changer": {
@@ -87,6 +89,8 @@ def media_loops(settings, media_path):
 def _validate_settings(settings):
     _require_number(settings, "volume", 0, 100, integer=True)
     _require_boolean(settings, "video_preview")
+    _require_boolean(settings, "preload_videos_to_cache")
+    _require_boolean(settings, "preload_videos_to_memory")
     for screen_name in ("screen1", "screen2"):
         resolution = settings["display_resolution"][screen_name]
         _require_number(resolution, "width", 1, 16384, integer=True)

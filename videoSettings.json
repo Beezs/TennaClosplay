@@ -14,6 +14,8 @@
     "videos/introduction.list.json"
   ],
   "video_preview": false,
+  "preload_videos_to_cache": false,
+  "preload_videos_to_memory": false,
   "microphone_device":null,
   "talk_threshold": 0.2,
   "voice_changer": {

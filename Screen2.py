@@ -17,6 +17,7 @@ from MediaTypes import (
     talk_animation_images,
 )
 from TkDisplay import create_tk_root
+from VideoPreloader import VideoPreloader
 from VideoSettings import display_geometry, load_settings, media_loops
 
 
@@ -26,6 +27,7 @@ TALK_FRAME_DELAY_SECONDS = 0.125
 MICROPHONE_RETRY_SECONDS = 5
 VLC_FILE_CACHING_MS = 1000
 TALK_SOUND_PATH = Path(__file__).resolve().parent / "media" / "TennaTalk.wav"
+VIDEO_DIR = Path(__file__).resolve().parent / "videos"
 TALK_SOUND_LEVEL = 0.12
 
 
@@ -42,6 +44,11 @@ def main():
     root.geometry(window_geometry)
     root.overrideredirect(True)
     root.configure(bg=BACKGROUND)
+    video_preloader = VideoPreloader(
+        VIDEO_DIR,
+        settings["preload_videos_to_cache"],
+        settings["preload_videos_to_memory"],
+    )
 
     preview = tk.Frame(root, bg="black")
     preview.place(x=0, y=0, relwidth=1, relheight=1)
@@ -874,7 +881,16 @@ def main():
                             f"Playing audio\n{Path(media_path).name}"
                         )
 
-                    media = instance.media_new(media_path)
+                    media_source = (
+                        video_preloader.media_path(media_path)
+                        if kind == "video"
+                        else media_path
+                    )
+                    media = instance.media_new(media_source)
+                    if kind == "video" and media_source != str(
+                        Path(media_path).resolve()
+                    ):
+                        media.add_option(":demux=avformat")
                     if sound_loops(media_path):
                         media.add_option(":input-repeat=65535")
                     player.set_media(media)
@@ -1112,11 +1128,13 @@ def main():
             instance.release()
         if sound_instance is not None:
             sound_instance.release()
+        video_preloader.stop()
         root.destroy()
 
     preview.bind("<Configure>", resize_image)
     root.bind("<Escape>", close_screen)
     root.protocol("WM_DELETE_WINDOW", close_screen)
+    video_preloader.start()
     start_microphone()
     root.after(100, sync_preview)
     root.after(50, update_talk_animation)
